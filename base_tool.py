@@ -3,27 +3,35 @@ from pydantic import BaseModel
 from typing import Any, Optional, Literal
 import time
 
+
 class ToolResult(BaseModel):
-    tool: str                      # имя инструмента (например: "weather")
-    status: Literal["ok", "error"] # результат выполнения
-    data: Optional[Any] = None     # любые полезные данные
-    error: Optional[str] = None    # сообщение об ошибке
-    duration_ms: Optional[float] = None  # время выполнения
+    tool: str                           # имя инструмента
+    status: Literal["ok", "error"]      # результат выполнения
+    data: Optional[Any] = None          # полезные данные (если ok)
+    error: Optional[str] = None         # сообщение об ошибке (если error)
+    duration_ms: float = 0.0            # длительность выполнения в мс
+
 
 class BaseTool:
     name: str = "base"
 
     async def run(self, text: str) -> ToolResult:
-        """Главный метод, который обязан реализовать каждый tool."""
+        """меряет время, ловит ошибки, нормализует результат."""
         start = time.perf_counter()
         try:
             data = await self._execute(text)
-            duration = (time.perf_counter() - start) * 1000
-            return ToolResult(tool=self.name, status="ok", data=data, duration_ms=duration)
+            status, err = "ok", None
         except Exception as e:
-            duration = (time.perf_counter() - start) * 1000
-            return ToolResult(tool=self.name, status="error", error=str(e), duration_ms=duration)
+            data, status, err = None, "error", str(e)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        return ToolResult(
+            tool=self.name,
+            status=status,
+            data=data,
+            error=err,
+            duration_ms=round(duration_ms, 3),
+        )
 
     async def _execute(self, text: str) -> Any:
-        """Реальная логика конкретного инструмента (переопределяется в наследниках)."""
+        """Реализация конкретного инструмента."""
         raise NotImplementedError

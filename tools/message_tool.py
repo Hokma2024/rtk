@@ -1,10 +1,10 @@
 # tools/message_tool.py
-from base_tool import BaseTool
+from ..base_tool import BaseTool, ToolResult 
 import httpx
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-load_dotenv()
+load_dotenv(find_dotenv())
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ENGINEER_CHAT_ID = os.getenv("ENGINEER_CHAT_ID")
 
@@ -15,7 +15,6 @@ class MessageTool(BaseTool):
         if not BOT_TOKEN or not ENGINEER_CHAT_ID:
             raise ValueError("Не настроен токен или chat_id")
 
-        # простейшее извлечение сообщения
         parts = text.split("сообщение:", 1)
         msg_text = parts[1].strip() if len(parts) > 1 else "Пустое сообщение"
 
