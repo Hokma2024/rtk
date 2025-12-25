@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  agent-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: rtk-agent-api
+    environment:
+      MCP_BASE_URL: "http://mcp-server:8002"
+      RAG_BASE_URL: "http://rag-mock:8001"
+      LLM_BASE_URL: "http://host.docker.internal:11434/v1"
+      LLM_MODEL: "qwen2.5:7b-instruct"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8080:8000"
+    depends_on:
+      - mcp-server
+      - rag-mock
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: rtk-mcp-server
+    ports:
+      - "8002:8002"
+
+  rag-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.rag
+    container_name: rtk-rag-mock
+    ports:
+      - "8001:8001"
