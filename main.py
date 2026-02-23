@@ -10,8 +10,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_filename, encoding='utf-8'),  # запись в файл
-        logging.StreamHandler()  # вывод в консоль (если хочешь оставить)
+        logging.FileHandler(log_filename, encoding='utf-8'),  
+        logging.StreamHandler()  
     ]
 )
 
