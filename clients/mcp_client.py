@@ -1,33 +1,106 @@
-
-# clients/mcp_client.py
 import asyncio
-from mcp import ClientSession, StdioServerParameters
+import json
+from typing import Any, Dict
+
+from openai import AsyncOpenAI
 from mcp.client.stdio import stdio_client
+from mcp import ClientSession
 
-class MCPClient:
-    def __init__(self, server_script_path: str):
-        self.server_params = StdioServerParameters(
-            command="python",
-            args=[server_script_path]   # путь к server.py
+
+OPENAI_MODEL = "gpt-4o-mini"  # можно заменить
+
+
+class MCPAgent:
+    def __init__(self, mcp_command: str):
+        self.mcp_command = mcp_command
+        self.openai = AsyncOpenAI()
+        self.session: ClientSession | None = None
+        self.tools_schema = None
+
+    async def connect_mcp(self):
+        self.stdio_ctx = stdio_client("python", [self.mcp_command])
+        read, write = await self.stdio_ctx.__aenter__()
+        self.session = ClientSession(read, write)
+        await self.session.__aenter__()
+
+        tools = await self.session.list_tools()
+        self.tools_schema = self._convert_tools_to_openai_schema(tools)
+
+    def _convert_tools_to_openai_schema(self, mcp_tools):
+        """Преобразуем MCP schema → OpenAI function schema"""
+        converted = []
+        for tool in mcp_tools:
+            converted.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.inputSchema,
+                },
+            })
+        return converted
+
+    async def run(self, user_input: str):
+        messages = [
+            {"role": "system", "content": "Ты агент поддержки заказов."},
+            {"role": "user", "content": user_input},
+        ]
+
+        response = await self.openai.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            tools=self.tools_schema,
+            tool_choice="auto",
         )
-        self.session = None
 
-    async def __aenter__(self):
-        reader, writer = await stdio_client(self.server_params).__aenter__()
-        self.session = await ClientSession(reader, writer).__aenter__()
-        await self.session.initialize()
-        return self
+        message = response.choices[0].message
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.session.__aexit__(exc_type, exc_val, exc_tb)
+        # Если модель решила вызвать инструмент
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                result = await self._handle_tool_call(tool_call)
 
-    async def call_tool(self, tool_name: str, arguments: dict):
-        """Вызывает инструмент по имени с переданными аргументами."""
-        result = await self.session.call_tool(tool_name, arguments)
-        # result.content содержит список TextContent или других типов
-        # В данном случае все инструменты возвращают текст (JSON)
-        if result.content and result.content[0].type == "text":
-            import json
-            return json.loads(result.content[0].text)
-        else:
-            raise ValueError(f"Unexpected response from tool {tool_name}: {result}")
+                messages.append(message.model_dump())
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result),
+                })
+
+            # Второй проход — уже с результатом инструмента
+            second_response = await self.openai.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=messages,
+            )
+            return second_response.choices[0].message.content
+
+        return message.content
+
+    async def _handle_tool_call(self, tool_call):
+        name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+
+        result = await self.session.call_tool(name, arguments)
+        return result.content  # MCP возвращает structured payload
+
+    async def close(self):
+        if self.session:
+            await self.session.__aexit__(None, None, None)
+        if hasattr(self, "stdio_ctx"):
+            await self.stdio_ctx.__aexit__(None, None, None)
+
+
+async def main():
+    agent = MCPAgent("server.py")  # твой MCP сервер
+    await agent.connect_mcp()
+
+    answer = await agent.run(
+        "Проверь заказ 12345 и обнови его статус на DONE если есть ошибка ERROR42"
+    )
+    print(answer)
+
+    await agent.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
