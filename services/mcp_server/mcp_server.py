@@ -2,24 +2,20 @@ from mcp.server import FastMCP
 from .models import *
 from .services import OrderService, OtrsService
 
-mcp = FastMCP(
-    name="orders-mcp",
-    version="2.0.0",
-    description="Orders + OTRS MCP server"
-)
+mcp = FastMCP("MCP Server")
 
 
 # =========================
 # Orders
 # =========================
 
-@mcp.tool(tags=["orders", "logs"])
+@mcp.tool()
 def search_logs(input: SearchLogsRequest) -> SearchLogsResponse:
     """Ищет код ошибки в логах заказа."""
     return OrderService.search_logs(input)
 
 
-@mcp.tool(tags=["orders"])
+@mcp.tool()
 def check_eissd_status(
     input: CheckEissdStatusRequest
 ) -> CheckEissdStatusResponse:
@@ -27,7 +23,7 @@ def check_eissd_status(
     return OrderService.check_eissd_status(input)
 
 
-@mcp.tool(tags=["orders", "mutation"])
+@mcp.tool()
 def update_order_status(
     input: UpdateOrderStatusRequest
 ) -> UpdateOrderStatusResponse:
@@ -35,7 +31,7 @@ def update_order_status(
     return OrderService.update_order_status(input)
 
 
-@mcp.tool(tags=["orders"])
+@mcp.tool()
 def check_edit_order_request(
     input: CheckEditOrderRequest
 ) -> CheckEditOrderResponse:
@@ -50,7 +46,7 @@ def check_edit_order_request(
 # OTRS
 # =========================
 
-@mcp.tool(tags=["otrs"])
+@mcp.tool()
 def resolve_mrf_queue(
     input: ResolveMrfQueueRequest
 ) -> ResolveMrfQueueResponse:
@@ -58,7 +54,7 @@ def resolve_mrf_queue(
     return OtrsService.resolve_mrf_queue(input)
 
 
-@mcp.tool(tags=["otrs", "mutation"])
+@mcp.tool()
 def add_otrs_comment(
     input: AddOtrsCommentRequest
 ) -> AddOtrsCommentResponse:
@@ -66,7 +62,7 @@ def add_otrs_comment(
     return OtrsService.add_comment(input)
 
 
-@mcp.tool(tags=["otrs", "mutation"])
+@mcp.tool()
 def update_otrs_ticket(
     input: UpdateOtrsTicketRequest
 ) -> UpdateOtrsTicketResponse:
