@@ -15,3 +15,7 @@ prometheus-client==0.24.1
 
 # MCP SDK (stdio client/server)
 mcp==1.26.0
+
+# если openrouter
+openai>=1.0.0
+requests>=2.31.0

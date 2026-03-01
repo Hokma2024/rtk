@@ -14,8 +14,10 @@ services:
       LLM_MODEL_NAME: "qwen3:8b"
       LLM_TIMEOUT_SECONDS: "60"
       REQUEST_TIME_BUDGET_SECONDS: "180"
-
-      OLLAMA_HOST: "http://host.docker.internal:11434"
+      #LLM_PROVIDER: "openrouter"
+      #LLM_MODEL_NAME: "openai/gpt-4o-mini"
+      #LLM_API_KEY: "PASTE_YOUR_OPENROUTER_KEY"
+      #OLLAMA_HOST: "http://host.docker.internal:11434"
 
       # DEBUG: "1"
       # MCP_DEBUG: "1"
