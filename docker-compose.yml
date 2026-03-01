@@ -1,0 +1,71 @@
+services:
+  agent:
+    build: .
+    environment:
+      PYTHONUNBUFFERED: "1"
+
+      # subprocess (stdio)
+      MCP_SERVER_MODULE: "services.mcp_server.mcp_server"
+
+      RAG_BASE_URL: "http://rag_mock:8090"
+
+      LLM_MODE: "tools"
+      LLM_PROVIDER: "ollama"
+      LLM_MODEL_NAME: "qwen3:8b"
+      LLM_TIMEOUT_SECONDS: "60"
+      REQUEST_TIME_BUDGET_SECONDS: "180"
+
+      OLLAMA_HOST: "http://host.docker.internal:11434"
+
+      # DEBUG: "1"
+      # MCP_DEBUG: "1"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "8080:8080"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 10
+
+    depends_on:
+      rag_mock:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  rag_mock:
+    build: .
+    command:
+      [
+        "uvicorn",
+        "services.rag_mock.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8090",
+      ]
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8090/health').read()",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
