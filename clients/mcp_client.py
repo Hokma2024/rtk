@@ -25,7 +25,7 @@ class McpClient:
     def __init__(self, mcp_command: str):
         self.mcp_command = mcp_command
         self.config = LlmConfig()
-        self.provider = OllamaProvider()
+        self.provider = OpenRouterProvider()
         self.session: ClientSession | None = None
         self.tools = []
         self._closed = False

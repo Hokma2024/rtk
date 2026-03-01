@@ -13,7 +13,7 @@ class Prompts:
 
 ДОСТУПНЫЕ ИНСТРУМЕНТЫ:
     - search_logs: поиск логов
-    - check_eissd_status: проверить статуса ЕИССД
+    - check_eissd_status: проверить статус ЕИССД
     - update_order_status: обновить статус заказа
     - resolve_mrf_queue: встать в очередь МРФ
     - add_comment: добавить комментарий ОТРС

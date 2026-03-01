@@ -1,6 +1,6 @@
 from mcp.server import FastMCP
-from mcp.mcp_server.all_models import *
-from mcp.mcp_server.services import OrderService, OtrsService
+from mcp_module.mcp_server.all_models import *
+from mcp_module.mcp_server.services import OrderService, OtrsService
 
 
 mcp = FastMCP("MCP Server")
