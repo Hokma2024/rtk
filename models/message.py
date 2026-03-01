@@ -5,5 +5,6 @@ class MessageRole(Enum):
     USER = "user"
 
 class Message:
-    role: MessageRole
-    content: str
+    def __init__(self, role: MessageRole, content: str):
+        self.role = role
+        self.content = content

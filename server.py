@@ -1,9 +1,11 @@
 from mcp.server import FastMCP
-from .models import *
-from .services import OrderService, OtrsService
+from mcp.mcp_server.all_models import *
+from mcp.mcp_server.services import OrderService, OtrsService
+
 
 mcp = FastMCP("MCP Server")
 
+print("СЕРВЕР ЗАПУЩЕН!")
 
 # =========================
 # Orders

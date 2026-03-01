@@ -1,57 +1,112 @@
 import os
+from typing import Any, Dict, List
 import httpx
-from langchain_ollama import ChatOllama
 from models.llm_config import LlmConfig
 import logging
+
+from models.message import Message, MessageRole
 
 logger = logging.getLogger(__name__)
 
 class OllamaProvider:
     def __init__(self):
+        self.config = LlmConfig()
 
-        try: 
-            self.config = LlmConfig()
-            logger.info("Загрузка конфигурации")
-        except Exception as e:
-            logger.error(f"Ошибка при загрузке конфигурации: {e}")
+    async def chat_completion(self, messages: list[dict], tools: List[Any]):
 
-    def initialization_llm(self):
         try:
-            os.environ['NO_PROXY'] = 'localhost,127.0.0.1'
-            os.environ['no_proxy'] = 'localhost,127.0.0.1'
-            logging.info("Отключение прокси для localhost")
+            request_body = {
+            "model": self.config.model,
+            "messages": messages,
+            "stream": False
+            }
+            print(self.config.ollama_chat)
+
+            if tools:
+                request_body["tools"] = self._convert_tools_to_ollama_format(tools)
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.config.ollama_chat,
+                    json=request_body,
+                    timeout=self.config.timeout
+                )
         
-            custom_timeout = httpx.Timeout(
-                connect=30.0,    # Время на установку соединения
-                read=120.0,      # Время на чтение ответа
-                write=30.0,      # Время на отправку
-                pool=10.0        # Время ожидания в пуле
-            )
-            logging.info("Создание таймаута")
-            
-            transport = httpx.HTTPTransport(
-                retries=3,
-                verify=True
-            )
-            logging.info("Создание транспорта для HTTP запросов")
+            print(f"Статус: {response.status_code}")
         
-            http_client = httpx.Client(
-                timeout=custom_timeout,
-                transport=transport,
-                follow_redirects=True
-            )
-            logging.info("Создание HTTP-клиента")
-        
-            self.llm = ChatOllama(
-                model=self.config.model,
-                base_url=self.config.ollama_host,
-                temperature=self.config.temperature,
-                num_predict=2048,
-                client=http_client  # Передаем настроенный клиент
-            )
-            logging.info(f"Подлкючение к локальной ЛЛМ, модель = {self.llm.model}")
-        except httpx.HTTPError as e:
-            logger.error(f"Ошибка HTTP: {e}")
-            raise
+            if response.status_code != 200:
+                print(f"Текст ошибки: {response.text}")
+                return []
+            data = response.json()
+
+            parce_data = self._parce_response(data)
+            return parce_data
         except Exception as e:
-            logger.error(f"Ошибка при инициализации ЛЛМ: {e}") 
+            print(f"*** ОШИБКА В OLLAMA PROVIDER: {e} ***")
+            import traceback
+            traceback.print_exc()  # ЭТО ПОКАЖЕТ ГДЕ ИМЕННО ОШИБКА
+            return []
+
+    def _convert_tools_to_ollama_format(self, mcp_tools):
+        converted = []
+        for tool in mcp_tools:
+            converted.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": tool.inputSchema,
+                },
+            })
+        return converted
+
+    def _parce_response(self, response: Dict[str, Any]):
+
+        message = response.get("message", {})
+        if not message:
+            logger.warning("В ответе API от Ollama нет message")
+            return []
+        
+        if not isinstance(message, dict):
+            logger.warning("Неверный формат message")
+            return []
+        
+        tool_calls = message.get("tool_calls", [])
+        if not tool_calls:
+            logger.warning("В ответе API от Ollama нет tool_calls")
+            return []
+        
+        if not isinstance(tool_calls, list):
+            logger.warning("Неверный формат tool_calls")
+            return []   
+
+        return tool_calls   
+    
+
+    def _tool_call(self, tools):
+        function = tools.get("function", {})
+        if not function:
+            logger.warning("В ответе API от OpenRouter нет function")
+            return []
+
+        if not isinstance(function, dict):
+            logger.warning("Неверный формат isinstance")
+            return []
+        
+        name = tools.get("name", "")
+        if not name:
+            logger.warning("В ответе API от OpenRouter нет name")
+            return []
+
+        if not isinstance(name, str):
+            logger.warning("Неверный формат name")
+            return []
+        
+        arguments = tools.get("arguments", "")
+        if not arguments:
+            logger.warning("В ответе API от OpenRouter нет arguments")
+            return []
+
+        if not isinstance(arguments, str):
+            logger.warning("Неверный формат arguments")
+            return []

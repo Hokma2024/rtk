@@ -2,7 +2,7 @@ from datetime import datetime
 import logging
 
 from fastapi import FastAPI
-from controllers.llm_controller import llm_router
+from app.llm_endpoints import llm_router
 
 log_filename = f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
 

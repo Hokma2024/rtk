@@ -13,5 +13,7 @@ class Settings:
 
     OLLAMA_HOST = os.getenv("OLLAMA_HOST")
 
+    OLLAMA_CHAT = os.getenv("OLLAMA_CHAT")
+
 
 settings = Settings()

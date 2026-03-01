@@ -1,6 +1,6 @@
 from typing import List
 from . import storage
-from .models import *
+from .all_models import *
 
 
 class OrderService:
