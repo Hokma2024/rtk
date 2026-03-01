@@ -134,8 +134,8 @@ class McpClient:
             else:
                 arguments_dict = arguments
 
-            mcp_arguments = {"input": arguments_dict}
-            result = await self.session.call_tool(name, arguments=mcp_arguments)
+            # mcp_arguments = {"input": arguments_dict}
+            result = await self.session.call_tool(name, arguments=arguments_dict)
             # print("РЕЗУЛЬТАТ ВЫЗОВА ТУЛЗОВ: ", result.content)
             return result.content 
                     
