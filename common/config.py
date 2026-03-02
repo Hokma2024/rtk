@@ -41,7 +41,9 @@ class Settings(BaseSettings):
 
     # API / debug
     debug: bool = Field(False, env="DEBUG")
-
+    mcp_debug: bool = Field(False, env="MCP_DEBUG")
+    ollama_host: str = Field("http://localhost:11434", env="OLLAMA_HOST")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
