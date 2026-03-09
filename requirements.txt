@@ -19,3 +19,5 @@ mcp==1.26.0
 # если openrouter
 openai>=1.0.0
 requests>=2.31.0
+
+prometheus_client
