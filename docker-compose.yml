@@ -8,7 +8,6 @@ services:
       - "11434:11434"
     environment:
       OLLAMA_KEEP_ALIVE: 1h
-      OLLAMA_HOST: ${OLLAMA_HOST}
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
@@ -145,18 +144,11 @@ services:
       ALLOW_QUEUE_CHANGE: ${ALLOW_QUEUE_CHANGE}
       DEBUG: ${DEBUG}
       MCP_DEBUG: ${MCP_DEBUG}
+      LOG_LEVEL: INFO
     ports:
       - "8080:8080"
-#    extra_hosts:
-#      - "host.docker.internal:host-gateway"
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
-        ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()"]
       interval: 30s
       timeout: 3s
       retries: 10
@@ -174,7 +166,11 @@ services:
     logging:
       driver: json-file
       options:
+        max-size: "10m"
+        max-file: "3"
         tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+    volumes:
+      - ./logs/agent:/app/logs
 
 volumes:
   ollama_data:

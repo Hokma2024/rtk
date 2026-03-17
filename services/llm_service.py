@@ -112,6 +112,10 @@ async def run_planning_loop(
 
     # fallback mode
     if mode == "fallback":
+        logger.info(
+            "[LLM_FALLBACK] mode=fallback ticket_id=%s reason=llm_disabled",
+            ticket.id
+        )
         llm_fallback_total.labels(mode="fallback").inc()
         rag = (context or {}).get("rag") or {}
         plan = []
@@ -157,7 +161,31 @@ async def run_planning_loop(
 
     async def call_llm(expect_tools: bool) -> tuple[str, List[Dict[str, Any]]]:
         timeout = min(settings.llm_timeout_seconds, _remaining_seconds(deadline))
-        return await provider.acall(messages, tools_schema if expect_tools else [], timeout=timeout)
+        
+        logger.info(
+            "[LLM_CALL] provider=%s model=%s mode=%s timeout=%d expect_tools=%s",
+            settings.llm_provider,
+            settings.llm_model_name,
+            settings.llm_mode,
+            timeout,
+            expect_tools
+        )
+        
+        content, tool_calls = await provider.acall(
+            messages, 
+            tools_schema if expect_tools else [], 
+            timeout=timeout
+        )
+        
+        fallback_used = settings.llm_mode in ("fallback", "json") or not expect_tools
+        logger.info(
+            "[LLM_RESULT] tool_calls_count=%d fallback_used=%s content_len=%d",
+            len(tool_calls),
+            fallback_used,
+            len(content) if content else 0
+        )
+        
+        return content, tool_calls
 
     # json mode
     if mode == "json":
@@ -235,6 +263,10 @@ async def run_planning_loop(
             }
         )
         try:
+            logger.info(
+                "[LLM_FALLBACK] reason=no_tool_calls ticket_id=%s mode=tools_fallback",
+                ticket.id
+            )
             plan_text, _ = await call_llm(expect_tools=False)
             plan = json.loads(plan_text)
             if not isinstance(plan, list):

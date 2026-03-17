@@ -7,10 +7,13 @@ unified_rtk.common.config
 from __future__ import annotations
 
 import functools
+import logging
 from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -52,7 +55,23 @@ class Settings(BaseSettings):
 @functools.lru_cache()
 def get_settings() -> Settings:
     s = Settings()
+    
+    logger.info(
+        "[CONFIG_LOADED] llm_provider=%s llm_model=%s llm_mode=%s timeout=%d rag_url=%s",
+        s.llm_provider,
+        s.llm_model_name,
+        s.llm_mode,
+        s.llm_timeout_seconds,
+        s.rag_base_url or "none"
+    )
+    
+    original_mode = s.llm_mode
     s.llm_mode = (s.llm_mode or "tools").strip().lower()
     if s.llm_mode not in ("tools", "json", "fallback"):
+        logger.warning(
+            "[CONFIG_WARN] llm_mode_invalid original=%s fallback=tools",
+            original_mode
+        )
         s.llm_mode = "tools"
+    
     return s

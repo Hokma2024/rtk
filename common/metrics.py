@@ -20,6 +20,19 @@ llm_fallback_total = Counter(
     ["mode"],
 )
 
+llm_calls_total = Counter(
+    "llm_calls_total",
+    "Total number of LLM API calls",
+    ["provider", "model", "status"],
+)
+
+mcp_tool_latency_seconds = Histogram(
+    "mcp_tool_latency_seconds",
+    "MCP tool call latency in seconds",
+    ["tool"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10),
+)
+
 agent_latency_seconds = Histogram(
     "agent_latency_seconds",
     "Request latency in seconds",

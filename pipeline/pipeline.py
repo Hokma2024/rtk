@@ -72,6 +72,8 @@ async def precheck_logs(ticket: Ticket, mcp: MCPClient, *, deadline: float) -> D
       - matched_samples: лимитированные матчи (для LLM/контекста)
     """
     _ensure_budget(deadline)
+    
+    logger.info("[PIPELINE] step=precheck ticket_id=%s order_id=%s", ticket.id, ticket.order_id)
 
     diag: List[str] = []
     try:
@@ -125,6 +127,9 @@ async def call_rag(ticket: Ticket, context: Dict[str, Any], *, deadline: float) 
     Шаг 3-4: фиксируем schema ответа (RagResponse) и валидируем.
     """
     _ensure_budget(deadline)
+    
+    logger.info("[PIPELINE] step=rag ticket_id=%s", ticket.id)
+    
     settings = get_settings()
     if not settings.rag_base_url:
         return {"rag": None}
@@ -161,6 +166,9 @@ async def plan_and_execute(
     Важно: final_comment НЕ генерируется LLM.
     """
     _ensure_budget(deadline)
+    
+    logger.info("[PIPELINE] step=plan_and_execute ticket_id=%s", ticket.id)
+    
     return await run_planning_loop(ticket, mcp, context=context, deadline=deadline)
 
 
@@ -173,6 +181,9 @@ async def verify_final_status(
 
     + Диагностика типов MCP-ответов: если вместо dict прилетел list и т.п. — логируем и пишем _diag.
     """
+    
+    logger.info("[PIPELINE] step=verify ticket_id=%s", ticket.id)
+    
     results: Dict[str, Any] = {}
     logs: List[ActionLogEntry] = []
     diag: List[str] = []
@@ -382,6 +393,9 @@ async def finalize(
     Возвращает ActionLogEntry[] ТОЛЬКО для дебага (API наружу их показывает лишь при DEBUG=1).
     """
     _ensure_budget(deadline)
+    
+    logger.info("[PIPELINE] step=finalize ticket_id=%s", ticket.id)
+    
     settings = get_settings()
 
     logs: List[ActionLogEntry] = []

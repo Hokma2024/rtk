@@ -145,12 +145,25 @@ class MCPClient:
 
         call_id = uuid.uuid4().hex[:8]
         t0 = time.perf_counter()
+        
+        logger.info(
+            "[MCP_CALL] tool=%s args=%s call_id=%s",
+            name, 
+            _preview(arguments), 
+            call_id
+        )
 
         if self._debug:
             logger.warning("[MCP:%s] CALL tool=%s args=%s", call_id, name, _preview(arguments))
 
         result = await self._session.call_tool(name, {"input": arguments})
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        
+        logger.info(
+            "[MCP_RESULT] tool=%s ok=true elapsed_ms=%d",
+            name, 
+            elapsed_ms
+        )
 
         content = getattr(result, "content", result)
 

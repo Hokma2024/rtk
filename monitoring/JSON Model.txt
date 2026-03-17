@@ -139,7 +139,7 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 22,
+        "w": 10,
         "x": 2,
         "y": 0
       },
@@ -197,14 +197,196 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 15,
-        "w": 24,
+        "h": 28,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "showControls": false,
+        "showTime": false,
+        "sortOrder": "Descending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "P8E80F9AEF21F6940"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{job=\"docker-logs\", container_name=\"rtk-agent\"} | json | line_format `{{.log}}`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "New panel",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"add_otrs_comment\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "add_otrs_comment"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"check_edit_order_request\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "check_edit_order_request"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"check_eissd_status\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "check_eissd_status"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"get_order_status\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "get_order_status"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"search_logs\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "search_logs"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "{__name__=\"tool_calls_total\", instance=\"agent:8080\", job=\"fast_api\", ok=\"true\", tool=\"update_otrs_ticket\"}"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "update_otrs_ticket"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 25,
+        "w": 2,
         "x": 0,
+        "y": 3
+      },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "tool_calls_total{ok=\"true\"} ",
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "New panel",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "P8E80F9AEF21F6940"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 25,
+        "w": 10,
+        "x": 2,
         "y": 3
       },
       "id": 2,
       "options": {
         "dedupStrategy": "none",
+        "detailsMode": "inline",
         "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "prettifyLogMessage": false,
@@ -224,8 +406,8 @@
             "uid": "P8E80F9AEF21F6940"
           },
           "direction": "backward",
-          "editorMode": "code",
-          "expr": "{job=\"docker-logs\", container_name=\"rtk-agent\"} | json | line_format `{{.log}}`",
+          "editorMode": "builder",
+          "expr": "{job=\"docker-logs\", container_name=~\"$container\"} |= `$log_type` | json | line_format `{{.log}}`",
           "queryType": "range",
           "refId": "A"
         }
@@ -235,7 +417,7 @@
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "auto",
   "schemaVersion": 42,
   "tags": [],
   "templating": {
@@ -281,17 +463,65 @@
         ],
         "query": "",
         "type": "textbox"
+      },
+      {
+        "current": {
+          "text": [
+            "rtk-agent"
+          ],
+          "value": [
+            "rtk-agent"
+          ]
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "definition": "",
+        "description": "",
+        "includeAll": true,
+        "multi": true,
+        "name": "container",
+        "options": [],
+        "query": {
+          "label": "container_name",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{job=\"docker-logs\"}",
+          "type": 1
+        },
+        "refresh": 1,
+        "regex": "",
+        "regexApplyTo": "value",
+        "type": "query"
+      },
+      {
+        "current": {
+          "text": [
+            "MCP_CALL"
+          ],
+          "value": [
+            "MCP_CALL"
+          ]
+        },
+        "description": "",
+        "includeAll": true,
+        "multi": true,
+        "name": "log_type",
+        "options": [],
+        "query": "MCP_RESULT, MCP_CALL, PIPELINE",
+        "type": "custom",
+        "valuesFormat": "csv"
       }
     ]
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-12h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "FastAPI Observability [test]",
   "uid": "fastapi-observability",
-  "version": 12,
+  "version": 30,
   "weekStart": ""
 }

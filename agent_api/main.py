@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,19 +26,32 @@ from pipeline.pipeline import (
 )
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+if not logging.root.handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | %(levelname)s | %(name)s | %(filename)s:%(lineno)d | %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    
+    logger.info("[AGENT_STARTUP] llm_provider=%s llm_mode=%s model=%s",
+        settings.llm_provider, settings.llm_mode, settings.llm_model_name)
+    
     mcp = MCPClient(server_module=settings.mcp_server_module)
     await mcp.connect()
+    
+    logger.info("[AGENT_STARTUP] mcp_connected module=%s", settings.mcp_server_module)
+    
     app.state.mcp = mcp
     yield
     mcp2: MCPClient = getattr(app.state, "mcp", None)
     if mcp2:
         await mcp2.close()
+        logger.info("[AGENT_SHUTDOWN] mcp_closed")
 
 
 app = FastAPI(title="Unified RTK Agent API", lifespan=lifespan)
@@ -66,17 +81,25 @@ class TicketOut(BaseModel):
 
 @app.get("/health")
 async def health():
+    logger.debug("[HEALTH_CHECK] status=ok")
     return {"ok": True}
 
 
 @app.get("/metrics")
 async def metrics():
+    logger.debug("[METRICS_ENDPOINT] prometheus_scrape")
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/tickets/intake", response_model=TicketOut)
 async def intake(ticket_in: TicketIn, mcp: MCPClient = Depends(get_mcp)):
     settings = get_settings()
+    
+    logger.info(
+        "[TICKET_INTAKE] ticket_id=%s order_id=%s region=%s llm_mode=%s",
+        ticket_in.id, ticket_in.order_id, ticket_in.region, settings.llm_mode
+    )
+    
     t0 = time.monotonic()
     deadline = t0 + settings.request_time_budget_seconds
 
@@ -136,12 +159,28 @@ async def intake(ticket_in: TicketIn, mcp: MCPClient = Depends(get_mcp)):
                 ]
 
             agent_requests_total.labels(endpoint="/tickets/intake", status="200").inc()
+            
+            logger.info(
+                    "[TICKET_DONE] ticket_id=%s status=200 next_step=%s elapsed_ms=%d",
+                    ticket.id,
+                    next_step if 'next_step' in locals() else "unknown",
+                    int((time.monotonic() - t0) * 1000)
+                )
+            
             return TicketOut(ticket_id=ticket.id, final_comment=final_comment, summary=summary, actions=actions_json)
 
         except TimeoutError as exc:
             agent_requests_total.labels(endpoint="/tickets/intake", status="504").inc()
             raise HTTPException(status_code=504, detail=str(exc))
         except Exception as exc:
+            
+            logger.error(
+                "[TICKET_ERROR] ticket_id=%s error_type=%s error_msg=%s",
+                ticket_in.id,
+                exc.__class__.__name__,
+                str(exc)
+            )
+            
             logger.exception("processing failed: %s", exc)
             agent_requests_total.labels(endpoint="/tickets/intake", status="500").inc()
             raise HTTPException(status_code=500, detail=str(exc))
