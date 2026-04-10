@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import ast
 import json
-import logging
-import os
 import sys
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-logger = logging.getLogger(__name__)
+from common.config import get_settings
+from common.logging import get_logger
+from common.metrics import mcp_requests_total
+
+log = get_logger(__name__)
 
 MAX_PREVIEW = 900
+
 
 def _preview(x: Any, n: int = MAX_PREVIEW) -> str:
     s = repr(x)
@@ -32,9 +35,8 @@ class MCPClient:
     def __init__(self, server_module: str) -> None:
         self.server_module = server_module
         self._stdio_ctx = None
-        self._session: Optional[ClientSession] = None
-
-        self._debug = os.getenv("MCP_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+        self._session: ClientSession | None = None
+        self._debug = get_settings().mcp_debug
 
     async def connect(self) -> None:
         params = StdioServerParameters(
@@ -50,7 +52,7 @@ class MCPClient:
         await self._session.initialize()
 
         if self._debug:
-            logger.warning("MCP_DEBUG enabled. server_module=%s", self.server_module)
+            log.warning("mcp_debug_enabled", server_module=self.server_module)
 
     async def close(self) -> None:
         if self._session is not None:
@@ -60,86 +62,99 @@ class MCPClient:
             await self._stdio_ctx.__aexit__(None, None, None)
             self._stdio_ctx = None
 
-    async def list_tools(self):
+    async def list_tools(self) -> Any:
         if self._session is None:
             raise RuntimeError("MCPClient is not connected")
         resp = await self._session.list_tools()
         return resp.tools if hasattr(resp, "tools") else resp
 
     def _decode_text(self, tool: str, raw_text: str, call_id: str) -> Any:
-        """
-        Многошаговый декодер с подробным trace в логах.
-        Показывает, что именно не распарсилось и почему в итоге получился str.
-        """
+        """Многоступенчатый декодер: JSON (до 3 проходов) → ast.literal_eval → строка как есть."""
         t = (raw_text or "").strip()
         if self._debug:
-            logger.warning("[MCP:%s:%s] RAW_TEXT type=str len=%d preview=%s", call_id, tool, len(t), _preview(t))
+            log.warning("mcp_decode_raw", call_id=call_id, tool=tool, len=len(t), preview=_preview(t))
 
         if not t:
             return ""
 
-        # 1) multi-pass json.loads (“JSON строка внутри JSON”)
+        # Проходы 1-3: итеративный json.loads (обрабатывает дважды закодированные JSON-строки)
         cur: Any = t
         for i in range(1, 4):
             if not isinstance(cur, str):
                 if self._debug:
-                    logger.warning("[MCP:%s:%s] JSON pass %d -> non-str (%s) preview=%s",
-                                   call_id, tool, i, type(cur).__name__, _preview(cur))
+                    log.warning(
+                        "mcp_decode_non_str",
+                        call_id=call_id,
+                        tool=tool,
+                        pass_=i,
+                        kind=type(cur).__name__,
+                        preview=_preview(cur),
+                    )
                 return cur
             s = cur.strip()
             try:
                 nxt = json.loads(s)
                 if self._debug:
-                    logger.warning("[MCP:%s:%s] JSON pass %d OK -> %s preview=%s",
-                                   call_id, tool, i, type(nxt).__name__, _preview(nxt))
+                    log.warning(
+                        "mcp_decode_json_ok",
+                        call_id=call_id,
+                        tool=tool,
+                        pass_=i,
+                        kind=type(nxt).__name__,
+                        preview=_preview(nxt),
+                    )
                 cur = nxt
-                # если распарсили и получили строку, а она выглядит как JSON — продолжаем
+                # Если результат всё ещё выглядит как JSON-контейнер в строке — продолжаем
                 if isinstance(cur, str) and _looks_like_json_container(cur):
                     continue
                 return cur
-            except Exception as e:
+            except (json.JSONDecodeError, ValueError):
+                # Намеренный выход: пробуем следующую стратегию декодирования
                 if self._debug:
-                    logger.warning("[MCP:%s:%s] JSON pass %d FAIL (%s): %s",
-                                   call_id, tool, i, e.__class__.__name__, str(e))
+                    log.warning("mcp_decode_json_fail", call_id=call_id, tool=tool, pass_=i)
                 break
 
-        # 2) python literal (ловит "{'a':1}" / "[...]" / "SearchLogsResponse(...)" не поймает)
+        # Проход 4: Python-литерал (обрабатывает dict/list с одинарными кавычками)
         try:
             v = ast.literal_eval(t)
             if self._debug:
-                logger.warning("[MCP:%s:%s] literal_eval OK -> %s preview=%s",
-                               call_id, tool, type(v).__name__, _preview(v))
-
-            # если literal_eval вернул строку — возможно внутри JSON
+                log.warning(
+                    "mcp_decode_literal_ok", call_id=call_id, tool=tool, kind=type(v).__name__, preview=_preview(v)
+                )
+            # Если literal_eval вернул строку-JSON-контейнер — пробуем ещё раз json.loads
             if isinstance(v, str) and _looks_like_json_container(v):
                 cur2: Any = v
                 for j in range(1, 3):
                     try:
                         nxt2 = json.loads(cur2)
                         if self._debug:
-                            logger.warning("[MCP:%s:%s] JSON-after-literal pass %d OK -> %s preview=%s",
-                                           call_id, tool, j, type(nxt2).__name__, _preview(nxt2))
+                            log.warning(
+                                "mcp_decode_json_after_literal_ok",
+                                call_id=call_id,
+                                tool=tool,
+                                pass_=j,
+                                kind=type(nxt2).__name__,
+                                preview=_preview(nxt2),
+                            )
                         cur2 = nxt2
                         if isinstance(cur2, str) and _looks_like_json_container(cur2):
                             continue
                         return cur2
-                    except Exception as e2:
-                        if self._debug:
-                            logger.warning("[MCP:%s:%s] JSON-after-literal pass %d FAIL (%s): %s",
-                                           call_id, tool, j, e2.__class__.__name__, str(e2))
+                    except (json.JSONDecodeError, ValueError):
+                        # Намеренно: возвращаем результат literal_eval
                         return v
             return v
-        except Exception as e:
+        except (ValueError, SyntaxError):
+            # Намеренно: проваливаемся к возврату исходной строки
             if self._debug:
-                logger.warning("[MCP:%s:%s] literal_eval FAIL (%s): %s",
-                               call_id, tool, e.__class__.__name__, str(e))
+                log.warning("mcp_decode_literal_fail", call_id=call_id, tool=tool)
 
-        # 3) fallback
+        # Финальный запасной вариант: возвращаем сырую строку
         if self._debug:
-            logger.warning("[MCP:%s:%s] DECODE FALLBACK -> str preview=%s", call_id, tool, _preview(t))
+            log.warning("mcp_decode_fallback_str", call_id=call_id, tool=tool, preview=_preview(t))
         return t
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         if self._session is None:
             raise RuntimeError("MCPClient is not connected")
 
@@ -147,57 +162,83 @@ class MCPClient:
         t0 = time.perf_counter()
 
         if self._debug:
-            logger.warning("[MCP:%s] CALL tool=%s args=%s", call_id, name, _preview(arguments))
+            log.warning("mcp_call_start_debug", call_id=call_id, tool=name, args=_preview(arguments))
 
-        result = await self._session.call_tool(name, {"input": arguments})
+        status = "error"
+        log.info("mcp_call_start", tool=name)
+        try:
+            result = await self._session.call_tool(name, {"input": arguments})
+            status = "ok"
+        except Exception:
+            log.exception("mcp_call_failed", tool=name)
+            raise
+        finally:
+            mcp_requests_total.labels(tool=name, status=status).inc()
+            log.info("mcp_call_end", tool=name, status=status)
+
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
-
         content = getattr(result, "content", result)
 
         if self._debug:
-            logger.warning("[MCP:%s] RAW_RESULT tool=%s elapsed_ms=%d raw_type=%s preview=%s",
-                           call_id, name, elapsed_ms, type(content).__name__, _preview(content))
+            log.warning(
+                "mcp_raw_result",
+                call_id=call_id,
+                tool=name,
+                elapsed_ms=elapsed_ms,
+                raw_type=type(content).__name__,
+                preview=_preview(content),
+            )
 
-        # MCP обычно возвращает list content items (TextContent и т.п.)
         if isinstance(content, list) and content:
-            decoded: List[Any] = []
+            decoded: list[Any] = []
             for idx, item in enumerate(content):
-                # для разных реализаций MCP: item.text или {"text": "..."}
                 if hasattr(item, "text"):
                     raw_text = item.text
                     if self._debug:
-                        logger.warning("[MCP:%s:%s] CONTENT[%d] item_type=%s has_text=True text_preview=%s",
-                                       call_id, name, idx, type(item).__name__, _preview(raw_text))
+                        log.warning(
+                            "mcp_content_item",
+                            call_id=call_id,
+                            tool=name,
+                            idx=idx,
+                            item_type=type(item).__name__,
+                            has_text=True,
+                            preview=_preview(raw_text),
+                        )
                     decoded.append(self._decode_text(name, raw_text, call_id))
                 elif isinstance(item, dict) and "text" in item:
                     raw_text = item.get("text")
                     if self._debug:
-                        logger.warning("[MCP:%s:%s] CONTENT[%d] item_type=dict has_text=True text_preview=%s",
-                                       call_id, name, idx, _preview(raw_text))
+                        log.warning(
+                            "mcp_content_item_dict", call_id=call_id, tool=name, idx=idx, preview=_preview(raw_text)
+                        )
                     decoded.append(self._decode_text(name, str(raw_text), call_id))
                 else:
                     if self._debug:
-                        logger.warning("[MCP:%s:%s] CONTENT[%d] item_type=%s (NO text) preview=%s",
-                                       call_id, name, idx, type(item).__name__, _preview(item))
+                        log.warning(
+                            "mcp_content_item_no_text",
+                            call_id=call_id,
+                            tool=name,
+                            idx=idx,
+                            item_type=type(item).__name__,
+                            preview=_preview(item),
+                        )
                     decoded.append(item)
 
             out = decoded[0] if len(decoded) == 1 else decoded
 
             if self._debug:
-                logger.warning("[MCP:%s] DECODED tool=%s type=%s preview=%s",
-                               call_id, name, type(out).__name__, _preview(out))
-
+                log.warning("mcp_decoded", call_id=call_id, tool=name, kind=type(out).__name__, preview=_preview(out))
             return out
 
         if self._debug:
-            logger.warning("[MCP:%s] RETURN-NONLIST tool=%s type=%s preview=%s",
-                           call_id, name, type(content).__name__, _preview(content))
-
+            log.warning(
+                "mcp_return_nonlist", call_id=call_id, tool=name, kind=type(content).__name__, preview=_preview(content)
+            )
         return content
 
     @staticmethod
-    def to_openai_tools_schema(mcp_tools) -> List[Dict[str, Any]]:
-        converted: List[Dict[str, Any]] = []
+    def to_openai_tools_schema(mcp_tools: Any) -> list[dict[str, Any]]:
+        converted: list[dict[str, Any]] = []
         for tool in mcp_tools:
             converted.append(
                 {

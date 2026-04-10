@@ -1,10 +1,34 @@
-from typing import List
+"""Бизнес-логика обработчиков MCP-инструментов."""
+
+from __future__ import annotations
+
 from . import storage
-from .models import *
+from .models import (
+    AddOtrsCommentRequest,
+    AddOtrsCommentResponse,
+    CheckEissdStatusRequest,
+    CheckEissdStatusResponse,
+    GetOrderStatusRequest,
+    GetOrderStatusResponse,
+    GetOtrsTicketRequest,
+    GetOtrsTicketResponse,
+    ListOtrsCommentsRequest,
+    ListOtrsCommentsResponse,
+    MrfProcessTicketRequest,
+    MrfProcessTicketResponse,
+    OrderStatus,
+    ResolveMrfQueueRequest,
+    ResolveMrfQueueResponse,
+    SearchLogsRequest,
+    SearchLogsResponse,
+    UpdateOrderStatusRequest,
+    UpdateOrderStatusResponse,
+    UpdateOtrsTicketRequest,
+    UpdateOtrsTicketResponse,
+)
 
 
 class OrderService:
-
     @staticmethod
     def search_logs(data: SearchLogsRequest) -> SearchLogsResponse:
         logs = storage.LOGS_DB.get(data.order_id, [])
@@ -49,7 +73,6 @@ class OrderService:
 
 
 class OtrsService:
-
     @staticmethod
     def resolve_mrf_queue(data: ResolveMrfQueueRequest) -> ResolveMrfQueueResponse:
         region = (data.region or "COMMON").upper()
@@ -67,8 +90,47 @@ class OtrsService:
 
     @staticmethod
     def get_ticket(data: GetOtrsTicketRequest) -> GetOtrsTicketResponse:
-        t = storage.OTRS_TICKETS.get(data.ticket_id) or {"ticket_id": data.ticket_id, "queue": "", "status": "NEW", "assignee": None}
+        # При отсутствии записи возвращаем заглушку со статусом NEW
+        t = storage.OTRS_TICKETS.get(data.ticket_id) or {
+            "ticket_id": data.ticket_id,
+            "queue": "",
+            "status": "NEW",
+            "assignee": None,
+        }
         return GetOtrsTicketResponse(ticket=t)
+
+    @staticmethod
+    def mrf_process_ticket(data: MrfProcessTicketRequest) -> MrfProcessTicketResponse:
+        from common.config import get_settings
+
+        seed = get_settings().mrf_mock_seed
+        verdicts = ["OK", "NEEDS_MANUAL", "EDIT_ORDER_PENDING", "ORDER_NOT_FOUND_IN_EISSD"]
+        h = abs(hash((seed, data.order_id, (data.region or "COMMON").upper())))
+        verdict = verdicts[h % len(verdicts)]
+
+        queue = f"ОЦО.МРФ.Эксплуатация СУЛЗ.{(data.region or 'COMMON').upper()}"
+
+        texts = {
+            "OK": "МРФ: обработка завершена, статус синхронизирован.",
+            "NEEDS_MANUAL": "МРФ: требуется ручная проверка специалистом.",
+            "EDIT_ORDER_PENDING": "МРФ: обнаружена заявка на редактирование заказа.",
+            "ORDER_NOT_FOUND_IN_EISSD": "МРФ: заказ отсутствует в ЕИССД.",
+        }
+
+        storage.OTRS_COMMENTS.append(
+            {
+                "ticket_id": data.ticket_id,
+                "text": texts[verdict],
+                "source": "mrf_mock",
+            }
+        )
+
+        return MrfProcessTicketResponse(
+            mrf_verdict=verdict,
+            comment_added=True,
+            queue=queue,
+            details={"order_id": data.order_id, "region": (data.region or "COMMON").upper()},
+        )
 
     @staticmethod
     def update_ticket(data: UpdateOtrsTicketRequest) -> UpdateOtrsTicketResponse:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -11,10 +11,11 @@ class RagRequest(BaseModel):
     subject: str
     annotation: str
     description: str
-    precheck: Dict[str, Any] = Field(default_factory=dict)
+    region: str = "COMMON"
+    precheck: dict[str, Any] = Field(default_factory=dict)
 
 
 class RagResponse(BaseModel):
-    required_actions: List[Dict[str, Any]] = Field(default_factory=list)
-    conditions: Dict[str, Any] = Field(default_factory=dict)
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+    required_actions: list[dict[str, Any]] = Field(default_factory=list)
+    conditions: dict[str, Any] = Field(default_factory=dict)
+    parameters: dict[str, Any] = Field(default_factory=dict)

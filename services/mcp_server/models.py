@@ -1,6 +1,11 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
+"""Pydantic-модели для схем запросов/ответов MCP-инструментов."""
+
+from __future__ import annotations
+
 from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class OrderStatus(str, Enum):
@@ -32,9 +37,9 @@ class SearchLogsRequest(BaseModel):
 
 class SearchLogsResponse(BaseModel):
     error_found: bool
-    error_code: Optional[str] = None
-    matched_samples: List[str] = Field(default_factory=list)
-    logs_full: List[str] = Field(default_factory=list)
+    error_code: str | None = None
+    matched_samples: list[str] = Field(default_factory=list)
+    logs_full: list[str] = Field(default_factory=list)
 
 
 class CheckEissdStatusRequest(BaseModel):
@@ -43,7 +48,7 @@ class CheckEissdStatusRequest(BaseModel):
 
 class CheckEissdStatusResponse(BaseModel):
     status: OrderStatus
-    raw: Dict[str, Any]
+    raw: dict[str, Any]
 
 
 class GetOrderStatusRequest(BaseModel):
@@ -52,7 +57,7 @@ class GetOrderStatusRequest(BaseModel):
 
 class GetOrderStatusResponse(BaseModel):
     status: OrderStatus
-    raw: Dict[str, Any]
+    raw: dict[str, Any]
 
 
 class UpdateOrderStatusRequest(BaseModel):
@@ -62,8 +67,8 @@ class UpdateOrderStatusRequest(BaseModel):
 
 class UpdateOrderStatusResponse(BaseModel):
     updated: bool
-    old_status: Optional[OrderStatus] = None
-    new_status: Optional[OrderStatus] = None
+    old_status: OrderStatus | None = None
+    new_status: OrderStatus | None = None
 
 
 class ResolveMrfQueueRequest(BaseModel):
@@ -88,7 +93,7 @@ class ListOtrsCommentsRequest(BaseModel):
 
 
 class ListOtrsCommentsResponse(BaseModel):
-    comments: List[Dict[str, Any]]
+    comments: list[dict[str, Any]]
 
 
 class GetOtrsTicketRequest(BaseModel):
@@ -96,7 +101,7 @@ class GetOtrsTicketRequest(BaseModel):
 
 
 class GetOtrsTicketResponse(BaseModel):
-    ticket: Dict[str, Any]
+    ticket: dict[str, Any]
 
 
 class CheckEditOrderRequest(BaseModel):
@@ -105,16 +110,29 @@ class CheckEditOrderRequest(BaseModel):
 
 class CheckEditOrderResponse(BaseModel):
     has_edit_order: bool
-    details: Dict[str, Any]
+    details: dict[str, Any]
+
+
+class MrfProcessTicketRequest(BaseModel):
+    ticket_id: str
+    order_id: str
+    region: str = Field("COMMON")
+
+
+class MrfProcessTicketResponse(BaseModel):
+    mrf_verdict: str  # OK | NEEDS_MANUAL | EDIT_ORDER_PENDING | ORDER_NOT_FOUND_IN_EISSD
+    comment_added: bool
+    queue: str
+    details: dict[str, Any]
 
 
 class UpdateOtrsTicketRequest(BaseModel):
     ticket_id: str
     queue: str
     status: OtrsStatus
-    assignee: Optional[str] = None
+    assignee: str | None = None
 
 
 class UpdateOtrsTicketResponse(BaseModel):
     ok: bool
-    ticket: Dict[str, Any]
+    ticket: dict[str, Any]

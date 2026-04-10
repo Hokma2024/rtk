@@ -17,7 +17,15 @@ services:
 
       OLLAMA_HOST: "http://host.docker.internal:11434"
 
-      # DEBUG: "1"
+      # --- Альтернатива: OpenRouter (облако, нужен ключ) ---
+      # LLM_PROVIDER: "openrouter"
+      # LLM_MODEL_NAME: "qwen/qwen3-8b"
+      # LLM_API_KEY: "${LLM_API_KEY}"
+
+      SERVICE_NAME: "agent_api"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      DEBUG: "1"
       # MCP_DEBUG: "1"
 
     extra_hosts:
@@ -44,6 +52,16 @@ services:
 
     restart: unless-stopped
 
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+    networks:
+      - rtk-network
+
   rag_mock:
     build: .
     command:
@@ -55,8 +73,13 @@ services:
         "--port",
         "8090",
       ]
+    environment:
+      SERVICE_NAME: "rag_mock"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
     ports:
       - "8090:8090"
+
     healthcheck:
       test:
         [
@@ -68,4 +91,81 @@ services:
       interval: 30s
       timeout: 3s
       retries: 10
+
     restart: unless-stopped
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+    networks:
+      - rtk-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheusdata:/prometheus
+    networks:
+      - rtk-network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+    networks:
+      - rtk-network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "9080:9080"
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./monitoring/promtail-config.yaml:/etc/promtail/config.yml
+    networks:
+      - rtk-network
+    command: -config.file=/etc/promtail/config.yml
+    privileged: true
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - grafanadata:/var/lib/grafana
+    networks:
+      - rtk-network
+
+volumes:
+  grafanadata:
+  prometheusdata:
+
+networks:
+  rtk-network:
+    name: rtk-network
+    driver: bridge

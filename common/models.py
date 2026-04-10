@@ -1,6 +1,6 @@
 """unified_rtk.common.models
 
-Shared domain models + normalisation helpers.
+Общие доменные модели и вспомогательные функции нормализации.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class OrderStatus(str, enum.Enum):
@@ -21,11 +21,11 @@ class OrderStatus(str, enum.Enum):
 
 class OtrsStatus(str, enum.Enum):
     NEW = "NEW"
-    OPEN = "OPEN"      
+    OPEN = "OPEN"
     CLOSED = "CLOSED"
 
 
-ORDER_STATUS_ALIASES: Dict[str, OrderStatus] = {
+ORDER_STATUS_ALIASES: dict[str, OrderStatus] = {
     "created": OrderStatus.CREATED,
     "in_progress": OrderStatus.IN_PROGRESS,
     "in progress": OrderStatus.IN_PROGRESS,
@@ -42,7 +42,7 @@ ORDER_STATUS_ALIASES: Dict[str, OrderStatus] = {
     "FAILED": OrderStatus.FAILED,
 }
 
-OTRS_STATUS_ALIASES: Dict[str, OtrsStatus] = {
+OTRS_STATUS_ALIASES: dict[str, OtrsStatus] = {
     "new": OtrsStatus.NEW,
     "open": OtrsStatus.OPEN,
     "in_work": OtrsStatus.OPEN,
@@ -55,6 +55,7 @@ OTRS_STATUS_ALIASES: Dict[str, OtrsStatus] = {
 
 
 def normalize_order_status(value: str) -> OrderStatus:
+    """Возвращает OrderStatus для переданной строки; бросает ValueError, если значение не распознано."""
     key = (value or "").strip()
     if key in ORDER_STATUS_ALIASES:
         return ORDER_STATUS_ALIASES[key]
@@ -65,6 +66,7 @@ def normalize_order_status(value: str) -> OrderStatus:
 
 
 def normalize_otrs_status(value: str) -> OtrsStatus:
+    """Возвращает OtrsStatus для переданной строки; бросает ValueError, если значение не распознано."""
     key = (value or "").strip()
     if key in OTRS_STATUS_ALIASES:
         return OTRS_STATUS_ALIASES[key]
@@ -77,13 +79,13 @@ def normalize_otrs_status(value: str) -> OtrsStatus:
 @dataclass
 class ActionLogEntry:
     tool: str
-    params: Dict[str, Any]
+    params: dict[str, Any]
     started_at: datetime = field(default_factory=datetime.utcnow)
-    duration_ms: Optional[int] = None
+    duration_ms: int | None = None
     ok: bool = True
-    error: Optional[str] = None
-    error_type: Optional[str] = None
-    result: Any = None 
+    error: str | None = None
+    error_type: str | None = None
+    result: Any = None
 
 
 @dataclass
@@ -94,6 +96,6 @@ class Ticket:
     annotation: str
     description: str
     region: str
-    queue: Optional[str]
+    queue: str | None
     created_at: datetime
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
