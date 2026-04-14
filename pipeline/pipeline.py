@@ -604,7 +604,9 @@ def build_final_comment(
                 if d not in diag:
                     diag.append(d)
 
-        # rag.action.* block — дословные required_actions из RAG без LLM-генерации
+        # rag.action.* block — дословные required_actions из RAG (формат rag_mock).
+        # Оставлен для обратной совместимости с мок-RAG, где план инструментов
+        # приходит структурированным списком.
         rag_actions = []
         if isinstance(rag, dict):
             ra = rag.get("required_actions")
@@ -624,6 +626,39 @@ def build_final_comment(
                 except (TypeError, ValueError):
                     params_s = str(params)
                 lines.append(f"rag.action.{idx}.params={params_s[:300]}")
+
+        # rag.* block (формат реального RAG через rag_adapter).
+        # Эмитится только если в rag есть поля из RagResponse, связанные с
+        # реальным RAG: answer_text / sources / parameters.rag_relevance.
+        if isinstance(rag, dict):
+            rag_params = rag.get("parameters") if isinstance(rag.get("parameters"), dict) else {}
+            rag_conditions = rag.get("conditions") if isinstance(rag.get("conditions"), dict) else {}
+            relevance = rag_params.get("rag_relevance") or rag_conditions.get("rag_relevance")
+            answer_text = rag.get("answer_text") if isinstance(rag.get("answer_text"), str) else None
+            sources = rag.get("sources") if isinstance(rag.get("sources"), list) else []
+
+            if relevance or answer_text or sources:
+                lines.append(f"rag.relevance={relevance or ''}")
+                lines.append(f"rag.full_length={_fmt_int(rag_params.get('rag_full_length'))}")
+                lines.append(f"rag.filtered_length={_fmt_int(rag_params.get('rag_filtered_length'))}")
+                lines.append(
+                    f"rag.matched_current_order="
+                    f"{_fmt_bool(rag_params.get('rag_matched_current_order'))}"
+                )
+                order_ids_found = rag_params.get("rag_order_ids_found") or []
+                if isinstance(order_ids_found, list):
+                    # Однострочно, чтобы не ломать key=value-формат.
+                    ids_joined = ",".join(str(x) for x in order_ids_found[:10])
+                    lines.append(f"rag.order_ids_found.count={len(order_ids_found)}")
+                    lines.append(f"rag.order_ids_found={ids_joined}")
+                lines.append(f"rag.sources_count={len(sources)}")
+                # Первые несколько строк отфильтрованного answer_text —
+                # задокументировано, что именно RAG сказал агенту.
+                if answer_text:
+                    answer_lines = [ln.strip() for ln in answer_text.splitlines() if ln.strip()]
+                    for idx, ln in enumerate(answer_lines[:5]):
+                        # Усечение на 300 символов, чтобы не раздуть тикет.
+                        lines.append(f"rag.answer.{idx}={ln[:300]}")
 
         lines.append(f"diag.count={len(diag)}")
         for idx, entry in enumerate(diag[:5]):

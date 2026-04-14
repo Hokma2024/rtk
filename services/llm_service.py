@@ -61,6 +61,129 @@ def _remaining_seconds(deadline: float, fallback: int = 5) -> int:
     return max(fallback, left)
 
 
+def _precheck_error_found(context: dict[str, Any] | None) -> bool:
+    """Извлекает флаг ``precheck.logs.error_found`` из контекста пайплайна.
+
+    Возвращает ``False`` при отсутствии данных или любом невалидном значении —
+    консервативный default: без подтверждённой ошибки не запускаем write-ветки.
+    """
+    if not context:
+        return False
+    precheck = context.get("precheck")
+    if not isinstance(precheck, dict):
+        return False
+    logs = precheck.get("logs")
+    if not isinstance(logs, dict):
+        return False
+    return bool(logs.get("error_found", False))
+
+
+_RAG_RELEVANCE_HINTS: dict[str, str] = {
+    "direct": (
+        "RAG нашёл похожий кейс напрямую по текущему order_id. Используй этот "
+        "текст как подсказку — он описывает конкретное действие по этой заявке, "
+        "но всё равно сверяй решение с реальным состоянием через tools."
+    ),
+    "batch_historical": (
+        "ВНИМАНИЕ: RAG вернул пакет похожих исторических кейсов по ДРУГИМ order_id. "
+        "Чужие order_id заменены плейсхолдером <other_order> — НИ В КОЕМ СЛУЧАЕ не "
+        "подставляй их в параметры tools. Используй этот блок только как общий "
+        "шаблон действий; конкретные значения бери из текущего тикета."
+    ),
+    "general_guidance": (
+        "RAG вернул общие рекомендации по процессу без привязки к конкретному "
+        "order_id. Оцени применимость к текущему состоянию, проверь реальные "
+        "статусы через tools."
+    ),
+}
+
+
+def _build_rag_context_block(context: dict[str, Any] | None) -> str:
+    """Собирает блок с текстом реального RAG для инъекции в system prompt.
+
+    Возвращает пустую строку, если:
+
+    - контекста нет;
+    - ``rag.answer_text`` пустой/отсутствует (это случай documentation/empty —
+      адаптер уже отфильтровал текст, агент работает по precheck + тикету);
+    - секция ``rag`` имеет невалидный тип.
+
+    Блок включает:
+
+    - метку ``rag_relevance`` (direct / batch_historical / general_guidance);
+    - подсказку, как трактовать этот тип ответа (особенно важно для
+      ``batch_historical``, чтобы LLM не утащила чужие order_id в параметры);
+    - собственно отфильтрованный ``answer_text`` как справочный материал.
+    """
+    if not context:
+        return ""
+    rag = context.get("rag")
+    if not isinstance(rag, dict):
+        return ""
+
+    answer_text = rag.get("answer_text")
+    if not isinstance(answer_text, str) or not answer_text.strip():
+        return ""
+
+    params = rag.get("parameters") if isinstance(rag.get("parameters"), dict) else {}
+    conditions = rag.get("conditions") if isinstance(rag.get("conditions"), dict) else {}
+    relevance = (
+        params.get("rag_relevance")
+        or conditions.get("rag_relevance")
+        or "unknown"
+    )
+    relevance = str(relevance)
+
+    hint = _RAG_RELEVANCE_HINTS.get(
+        relevance,
+        "RAG вернул текстовую подсказку — используй как справочный материал.",
+    )
+
+    return (
+        f"RAG_CONTEXT (relevance={relevance}):\n"
+        f"{hint}\n"
+        f"---\n"
+        f"{answer_text.strip()}\n"
+        f"---"
+    )
+
+
+def build_precheck_fallback_plan(
+    ticket: Ticket,
+    context: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Собирает детерминированный план инструментов на основании precheck.
+
+    Используется в двух местах:
+
+    - ``mode == "fallback"``, когда LLM отключён и в RAG нет готового
+      ``required_actions`` (например, реальный RAG через rag_adapter возвращает
+      только текст в ``answer_text``).
+    - Аварийный откат в tools-режиме, когда LLM не сгенерировала ни одного
+      tool-call и не смогла вернуть валидный JSON-план.
+
+    Логика:
+
+    - ``precheck.logs.error_found = True`` — в логах есть подтверждённая ошибка,
+      нужно расширенное обследование: статус в ЕИССД + СУЛЗ + наличие
+      обрабатываемой заявки на редактирование (write-tool). Дальнейшую
+      маршрутизацию в МРФ выполняет детерминированный ``mrf_roundtrip``
+      пайплайна — дублировать его здесь не нужно.
+    - ``error_found = False`` — только чтение: сверяем статусы, чтобы не
+      тревожить боевые write-инструменты без подтверждённого основания.
+    """
+    order_id = ticket.order_id
+    read_plan: list[dict[str, Any]] = [
+        {"tool": "check_eissd_status", "arguments": {"order_id": order_id}},
+        {"tool": "get_order_status", "arguments": {"order_id": order_id}},
+    ]
+    if _precheck_error_found(context):
+        read_plan.append(
+            {"tool": "check_edit_order_request", "arguments": {"order_id": order_id}}
+        )
+    return read_plan
+
+
 async def _execute_tools_from_plan(
     mcp_client: MCPClient,
     plan: list[dict[str, Any]],
@@ -122,11 +245,7 @@ async def run_planning_loop(
             if isinstance(ra, list):
                 plan = [x for x in ra if isinstance(x, dict)]
         if not plan:
-            plan = [
-                {"tool": "check_eissd_status", "arguments": {"order_id": ticket.order_id}},
-                {"tool": "get_order_status", "arguments": {"order_id": ticket.order_id}},
-                {"tool": "check_edit_order_request", "arguments": {"order_id": ticket.order_id}},
-            ]
+            plan = build_precheck_fallback_plan(ticket, context)
         return await _execute_tools_from_plan(mcp_client, plan)
 
     log.info("llm_provider_selected", provider=settings.llm_provider, model=settings.llm_model_name)
@@ -156,6 +275,10 @@ async def run_planning_loop(
         "list_otrs_comments (прочитай свежий комментарий от МРФ, прими решение).\n"
         "- Когда закончил вызывать tools, верни слово DONE."
     )
+
+    rag_block = _build_rag_context_block(context)
+    if rag_block:
+        system_prompt += "\n\n" + rag_block
 
     if context:
         system_prompt += "\n\nCONTEXT:\n" + _safe_json_dumps(context)
@@ -309,6 +432,14 @@ async def run_planning_loop(
             log.error(
                 "llm_fallback_error", exc_type=exc.__class__.__name__, detail=str(exc)
             )
+
+        # Если и LLM-fallback ничего не породил — детерминированный precheck-план.
+        # Никогда не оставляем тикет без единого действия: pipeline ожидает
+        # хотя бы попытку сверки статусов для формирования финального отчёта.
+        if not actions:
+            log.warning("llm_fallback", reason="precheck_based_deterministic_plan")
+            precheck_plan = build_precheck_fallback_plan(ticket, context)
+            actions.extend(await _execute_tools_from_plan(mcp_client, precheck_plan))
 
     _collect_metrics()
     return actions

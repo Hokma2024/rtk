@@ -175,6 +175,56 @@ class TestBuildFinalComment:
         assert "precheck.error_found=false" in comment
         assert "next_step=NO_ERROR_IN_LOGS" in comment
 
+    @pytest.mark.unit
+    def test_real_rag_block_emitted(self, ticket):
+        """Реальный RAG через rag_adapter — rag.relevance / rag.answer.* / rag.sources_count."""
+        comment = build_final_comment(
+            ticket,
+            precheck={"logs": {"error_found": True}, "_diag": []},
+            rag={
+                "required_actions": [],
+                "conditions": {"rag_relevance": "direct", "matched_current_order": True},
+                "parameters": {
+                    "rag_relevance": "direct",
+                    "rag_full_length": 1234,
+                    "rag_filtered_length": 350,
+                    "rag_order_ids_found": ["ORD-123", "OTHER-1"],
+                    "rag_matched_current_order": True,
+                    "cached": False,
+                },
+                "answer_text": "1. Перевести заявку ORD-123 в отказ.\n2. Высвободить СН.",
+                "sources": [{"url": "https://confluence/x", "page_title": "P"}],
+            },
+            actions=[ActionLogEntry(tool="check_eissd_status", params={}, ok=True)],
+            verify={"sulz_db": {"status": "DONE"}, "eissd": {"status": "DONE"}, "_diag": []},
+        )
+        assert "rag.relevance=direct" in comment
+        assert "rag.full_length=1234" in comment
+        assert "rag.filtered_length=350" in comment
+        assert "rag.matched_current_order=true" in comment
+        assert "rag.order_ids_found.count=2" in comment
+        assert "rag.order_ids_found=ORD-123,OTHER-1" in comment
+        assert "rag.sources_count=1" in comment
+        assert "rag.answer.0=1. Перевести заявку ORD-123 в отказ." in comment
+        assert "rag.answer.1=2. Высвободить СН." in comment
+
+    @pytest.mark.unit
+    def test_real_rag_block_absent_for_mock(self, ticket):
+        """Мок-RAG — без answer_text/parameters блок rag.* новой формы не эмитится."""
+        comment = build_final_comment(
+            ticket,
+            precheck={"logs": {"error_found": True}, "_diag": []},
+            rag={"required_actions": [{"tool": "check_eissd_status"}]},
+            actions=[ActionLogEntry(tool="check_eissd_status", params={}, ok=True)],
+            verify={"_diag": []},
+        )
+        # Legacy-блок сохранён.
+        assert "rag.required_actions_count=1" in comment
+        assert "rag.action.count=1" in comment
+        # Новые поля real-RAG отсутствуют — их нечего показывать.
+        assert "rag.relevance=" not in comment
+        assert "rag.answer.0" not in comment
+
 
 class TestVerifyFinalStatusLogsRecheck:
     @pytest.mark.unit

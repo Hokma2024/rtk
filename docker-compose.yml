@@ -7,9 +7,9 @@ services:
       # subprocess (stdio)
       MCP_SERVER_MODULE: "services.mcp_server.mcp_server"
 
-      RAG_BASE_URL: "http://rag_mock:8090"
+      RAG_BASE_URL: "${RAG_BASE_URL:-http://rag_adapter:8091}"
 
-      LLM_MODE: "tools"
+      LLM_MODE: "${LLM_MODE:-fallback}"
       LLM_PROVIDER: "ollama"
       LLM_MODEL_NAME: "qwen3:8b"
       LLM_TIMEOUT_SECONDS: "60"
@@ -48,6 +48,8 @@ services:
 
     depends_on:
       rag_mock:
+        condition: service_healthy
+      rag_adapter:
         condition: service_healthy
 
     restart: unless-stopped
@@ -89,6 +91,110 @@ services:
           "import urllib.request; urllib.request.urlopen('http://localhost:8090/health').read()",
         ]
       interval: 30s
+      timeout: 3s
+      retries: 10
+
+    restart: unless-stopped
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+    networks:
+      - rtk-network
+
+  # Адаптер между агентом и реальным RAG-сервисом.
+  # Запускается параллельно с rag_mock — чтобы переключиться,
+  # меняем RAG_BASE_URL у agent с http://rag_mock:8090 на http://rag_adapter:8091.
+  # REAL_RAG_URL пока не задан — адаптер мягко деградирует (возвращает empty).
+  rag_adapter:
+    build: .
+    command:
+      [
+        "uvicorn",
+        "services.rag_adapter.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8091",
+      ]
+    environment:
+      SERVICE_NAME: "rag_adapter"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      # TODO(stand): получить URL реального RAG у команды тестового стенда.
+      # По умолчанию ходим в fake_real_rag — эмулятор реального RAG на фикстурах.
+      REAL_RAG_URL: "${REAL_RAG_URL:-http://fake_real_rag:9999/query}"
+      REAL_RAG_COLLECTION: "${REAL_RAG_COLLECTION:-СУЛЗ}"
+      REAL_RAG_USE_CACHE: "${REAL_RAG_USE_CACHE:-true}"
+      REAL_RAG_PROMPT_TYPE: "${REAL_RAG_PROMPT_TYPE:-system}"
+      REAL_RAG_TIMEOUT_SECONDS: "${REAL_RAG_TIMEOUT_SECONDS:-30}"
+
+    depends_on:
+      fake_real_rag:
+        condition: service_healthy
+
+    ports:
+      - "8091:8091"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8091/health').read()",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 10
+
+    restart: unless-stopped
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+        tag: "{{.ImageName}}|{{.Name}}|{{.ImageFullID}}|{{.FullID}}"
+
+    networks:
+      - rtk-network
+
+  # Эмулятор реального RAG. Отвечает на POST /query по контракту
+  # реального сервиса и выбирает фикстуру по order_id из запроса.
+  # Нужен только для сквозного теста: переключаем rag_adapter на него
+  # пока команда стенда не выдаст настоящий REAL_RAG_URL.
+  fake_real_rag:
+    build: .
+    command:
+      [
+        "uvicorn",
+        "services.fake_real_rag.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9999",
+      ]
+    environment:
+      SERVICE_NAME: "fake_real_rag"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      FAKE_RAG_FIXTURE: "/app/tests/fixtures/rag_real_responses.json"
+
+    ports:
+      - "9999:9999"
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:9999/health').read()",
+        ]
+      interval: 10s
       timeout: 3s
       retries: 10
 

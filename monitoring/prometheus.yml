@@ -5,4 +5,4 @@ scrape_configs:
   - job_name: "fast_api"
     metrics_path: /metrics
     static_configs:
-      - targets: ["agent:8080"]
+      - targets: ["agent:8080", "rag_mock:8090", "rag_adapter:8091"]

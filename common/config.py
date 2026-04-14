@@ -55,6 +55,16 @@ class Settings(BaseSettings):
     ollama_host: str = "http://localhost:11434"
     ollama_think: bool | None = None
 
+    # Реальный RAG (используется сервисом rag_adapter). URL помечен как TODO(stand):
+    # на момент разработки endpoint реального RAG неизвестен, будет получен
+    # от команды тестового стенда и прописан в .env.
+    # TODO(stand): заменить на реальный URL, когда команда его предоставит.
+    real_rag_url: str | None = None
+    real_rag_collection: str = "СУЛЗ"
+    real_rag_use_cache: bool = True
+    real_rag_prompt_type: str = "system"
+    real_rag_timeout_seconds: int = 30
+
 
 @functools.lru_cache
 def get_settings() -> Settings:
